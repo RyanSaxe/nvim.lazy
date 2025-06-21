@@ -8,18 +8,6 @@ vim.keymap.set("v", "J", ":m '>+1<CR>gv=gv", { desc = "move lines down in visual
 vim.keymap.set("v", "K", ":m '<-2<CR>gv=gv", { desc = "move lines up in visual selection" })
 -- make escape go to normal mode when in a terminal
 vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { silent = true, desc = "Terminal: go to Normal mode" })
--- custom toggles, all at <leader>u + character to integrate with existing lazyvim toggles UI
-
--- example for inline type hints -- not needed since comes built with lazyvim
--- local function _toggle_inlay_hints()
---   vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())
--- end
---
--- vim.keymap.set("n", "<leader>th", _toggle_inlay_hints, {
---   desc = "Toggle LSP Inlay Hints",
--- })
---
--- Helper: return true if any Diffview buffer is open
 
 -- TODO: set up full different set of git toggles
 -------------------------------------------------------------------------------
@@ -95,11 +83,29 @@ local function toggle_pyright_diagnostic_mode()
 end
 
 vim.keymap.set("n", "<leader>tp", toggle_pyright_diagnostic_mode, { desc = "Toggle basedpyright diagnosticMode" })
--- TODO: get the picker to reload as more diagnostics come in ... below implementation breaks search
--- vim.keymap.set("n", "<leader>tP", function()
---   toggle_pyright_diagnostic_mode()
---   Snacks.picker.diagnostics({
---     live = true,
---     supports_live = true,
---   })
--- end, { desc = "Search ALL Workspace Diagnostics" })
+
+-- some code that I might use for searching python packages -- but since go to def is so good I probably don't need it
+-- local get_python_package_dir = function()
+--   local venv_path = os.getenv("VIRTUAL_ENV")
+--   if not venv_path then
+--     vim.notify("Could not determine Python VIRTUAL_ENV.", vim.log.levels.WARN)
+--     return nil
+--   end
+-- local site_packages_path = venv_path .. "/lib/python" .. vim.fn.matchstr(vim.fn.system("python -c 'import sys; print(sys.version_info.major)'"), "%d") .. "/site-packages"
+--   return site_packages_path
+-- end
+--
+-- local get_all_available_python_packages = function()
+--   local site_packages_path = get_python_package_dir()
+--   if not site_packages_path then
+--     return {}
+--   end
+--
+--   local packages = {}
+--   for _, dir in ipairs(vim.fn.readdir(site_packages_path)) do
+--     if vim.fn.isdirectory(site_packages_path .. "/" .. dir) == 1 then
+--       table.insert(packages, dir)
+--     end
+--   end
+--   return packages
+-- end

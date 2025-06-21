@@ -54,7 +54,6 @@ end
 
 local git_pickers = require("custom.git.pickers")
 local git_utils = require("custom.git.utils")
-local enable_issues = true
 local Snacks = require("snacks")
 
 local show_if_has_second_pane = function()
@@ -102,16 +101,47 @@ end
 local search_keys = function()
   local cwd = vim.fn.getcwd()
   local project = vim.fn.fnamemodify(cwd, ":t")
-  local header = { pane = 1, title = "Search Project", desc = " (" .. project .. ")" }
+  local header = { pane = 1, title = "Project", desc = " (" .. project .. ")" }
 
   local keys = {
     { icon = " ", key = "/", desc = "Grep Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
     {
       icon = " ",
-      desc = "Search TODOs",
+      desc = "Search Code TODOs",
       key = "x",
       action = function()
         Snacks.picker.todo_comments({ keywords = { "TODO", "FIX", "FIXME", "HACK", "BUG" } })
+      end,
+    },
+    {
+      icon = " ",
+      desc = "Open TODO Notes",
+      key = "t",
+      action = function()
+        Snacks.scratch.open({
+          name = "TODO", -- this name makes it such that checkmate.nvim runs on this.
+          ft = "markdown",
+        })
+      end,
+    },
+    {
+      desc = "Open Code Scratchpad",
+      icon = " ",
+      key = "s",
+      action = function()
+        -- we ask the user to input the filetype and open a scratchpad for them
+
+        vim.ui.input({
+          prompt = "Enter filetype for scratchpad (default: python): ",
+          default = "python",
+        }, function(ft)
+          if ft == nil or ft == "" then
+            ft = "python"
+          end
+          Snacks.scratch.open({
+            ft = ft,
+          })
+        end)
       end,
     },
   }
@@ -129,68 +159,11 @@ local search_keys = function()
 
   return create_pane(header, keys)
 end
-local hotkeys = function()
-  local header = { pane = 1, title = "Convenient Commands" }
-
-  local keys = {
-
-    {
-      icon = "󰒲 ",
-      key = "l",
-      desc = "Lazy",
-      action = ":Lazy",
-      enabled = package.loaded.lazy ~= nil,
-    },
-    -- I dont use lazy extras much anymore, but leaving it here to easily enable it if needed
-    {
-      icon = " ",
-      key = "x",
-      desc = "Lazy Extras",
-      action = ":LazyExtras",
-      enabled = false, -- package.loaded.lazy ~= nil,
-    },
-    { icon = " ", key = "q", desc = "Quit", action = ":qa" },
-    { icon = " ", key = "r", desc = "Restore Session", section = "session" },
-  }
-
-  return create_pane(header, keys)
-end
 
 local globalkeys = function()
   -- NOTE: consider the projects section that only shows up if not in a git repo
-  local header = { pane = 1, title = "Global Commands" }
+  local header = { pane = 1, title = "Global" }
   local keys = {
-    {
-      icon = "󰒲 ",
-      key = "l",
-      desc = "Lazy",
-      action = ":Lazy",
-      enabled = package.loaded.lazy ~= nil,
-    },
-    -- I dont use lazy extras much anymore, but leaving it here to easily enable it if needed
-    {
-      icon = " ",
-      key = "x",
-      desc = "Lazy Extras",
-      action = ":LazyExtras",
-      enabled = false, -- package.loaded.lazy ~= nil,
-    },
-    { icon = " ", key = "q", desc = "Quit", action = ":qa" },
-    { icon = " ", key = "r", desc = "Restore Session", section = "session" },
-    {
-      icon = " ",
-      key = "c",
-      desc = "Search Config",
-      action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})",
-    },
-    {
-      action = function()
-        Snacks.scratch.select()
-      end,
-      icon = " ",
-      key = "s",
-      desc = "Select Scratch File",
-    },
     {
       icon = " ",
       key = "p",
@@ -198,7 +171,6 @@ local globalkeys = function()
       action = function()
         return Snacks.picker.projects({
           confirm = function(picker, item)
-            -- Snacks.picker.actions.load_session(picker, item)
             picker:close()
             vim.api.nvim_set_current_dir(item.file)
             Snacks.dashboard.update()
@@ -206,55 +178,83 @@ local globalkeys = function()
         })
       end,
     },
+    { icon = " ", key = "q", desc = "Quit", action = ":qa" },
+    {
+      icon = "󰒲 ",
+      key = "l",
+      desc = "Manage Lua Plugins",
+      action = ":Lazy",
+      enabled = package.loaded.lazy ~= nil,
+    },
+    { icon = " ", key = "r", desc = "Restore Session", section = "session" },
+    {
+      icon = " ",
+      key = "c",
+      desc = "Search Neovim Config",
+      action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})",
+    },
   }
 
   return create_pane(header, keys)
+end
+local recent_project_toggle = function()
+  local in_git = Snacks.git.get_root() ~= nil
+  local has_two_panes = show_if_has_second_pane()
+  -- if in git and has one pane, then we disable
+  return not (in_git and not has_two_panes)
+end
+local get_recent_files = function()
+  local out = {}
+  local max_files = 5
+  local recent_files = recent_files_in_cwd(max_files)
+  local n_files = #recent_files
+  local pane = Snacks.git.get_root() and 2 or 1
+  local final_padding = pane == 2 and max_files - n_files + 1 or 1
+
+  for i, rel in ipairs(recent_files) do
+    out[#out + 1] = {
+      pane = pane,
+      icon = "󰈙 ",
+      indent = 2,
+      padding = (i == n_files) and final_padding or 0,
+      desc = normalize_path(rel),
+      key = tostring(i),
+      action = function()
+        vim.cmd("edit " .. rel)
+      end,
+      enabled = recent_project_toggle,
+    }
+  end
+  if #out == 0 then
+    out[1] = {
+      pane = pane,
+      icon = " ",
+      desc = "No recent files in this directory",
+      padding = pane == 2 and max_files or 1,
+      enabled = recent_project_toggle,
+    }
+  end
+  return out
 end
 
 local create_sections = function()
   local base_branch = git_utils.get_base_branch()
   local current_branch = git_utils.get_current_branch()
+  local recent_files = get_recent_files()
   return {
 
     search_keys,
     {
       title = "Recent Project Files",
-      pane = 2,
+      pane = Snacks.git.get_root() and 2 or 1,
       indent = 0,
       padding = 1,
+      enabled = recent_project_toggle,
     },
-    function()
-      local out = {}
-      local recent_files = recent_files_in_cwd(3)
-      for i, rel in ipairs(recent_files) do
-        out[#out + 1] = {
-          pane = 2,
-          icon = "󰈙 ",
-          indent = 2,
-          padding = (i == #recent_files) and 1 or 0,
-          desc = normalize_path(rel),
-          key = tostring(i),
-          action = function()
-            vim.cmd("edit " .. rel)
-          end,
-          enabled = true,
-        }
-      end
-      if #out == 0 then
-        out[1] = {
-          pane = 2,
-          icon = " ",
-          desc = "No recent files in this directory",
-          padding = 1,
-          enabled = false,
-        }
-      end
-      return out
-    end,
-
+    recent_files,
     {
       pane = 1,
-      title = "Git Operations",
+      title = "Git",
       desc = string.format(" (%s)", current_branch:gsub("\n", "")),
       indent = 0,
       padding = 1,
@@ -267,6 +267,7 @@ local create_sections = function()
       key = "b",
       action = function()
         Snacks.picker.git_branches({
+          all = true,
           confirm = function(picker, item)
             picker:close()
             git_utils.checkout_branch(item.branch)
@@ -292,7 +293,7 @@ local create_sections = function()
       pane = 1,
       icon = " ",
       indent = 2,
-      desc = "Find Un-Commited Changes",
+      desc = "Search Un-Commited Changes",
       key = "u",
       action = function()
         Snacks.picker.git_status()
@@ -315,6 +316,19 @@ local create_sections = function()
       indent = 2,
       -- 58 ticks is exactly the size of a line (width 60, indent = 2)
       title = "----------------------------------------------------------",
+      enabled = Snacks.git.get_root() ~= nil,
+    },
+
+    {
+      pane = 1,
+      icon = " ",
+      desc = "Search Recent Notifications",
+      key = "N",
+      indent = 2,
+      action = function()
+        vim.notify("Fetching Notifications from GitHub...")
+        vim.defer_fn(git_pickers.notification_picker, 100)
+      end,
       enabled = Snacks.git.get_root() ~= nil,
     },
     {
@@ -344,7 +358,7 @@ local create_sections = function()
     {
       pane = 1,
       icon = " ",
-      desc = "Open in Browser",
+      desc = "Open Repo in GitHub",
       padding = 1,
       key = "B",
       indent = 2,
@@ -355,19 +369,54 @@ local create_sections = function()
     },
     -- hotkeys,
     globalkeys,
+    -- if snorlax is being shown and there is no git operations, then the recent files move to the
+    -- first pane, and snorlax needs to be padded according to the number of lines in recent files
+    {
+      pane = 2,
+      enabled = function()
+        return show_if_has_second_pane() and Snacks.git.get_root() == nil
+      end,
+      padding = #recent_files / 2,
+    },
     {
       pane = 2,
       section = "terminal",
       -- the commented out command below will have an animated ascii aquarium
       -- cmd = 'curl "http://asciiquarium.live?cols=$(tput cols)&rows=$(tput lines)"',
-      cmd = "pokemon-colorscripts -n snorlax -s --no-title",
-      indent = 8,
+      -- NOTE: for some reason, sleep 10 makes it never flicker, but also only causes a 1 second pause
+      cmd = "pokemon-colorscripts -n snorlax -s --no-title; sleep 0.01",
+      ttl = math.huge, -- make the cache last forever so the 1 second pause is only the first time opening a project
+      indent = 10,
       -- 21 is the exact number of lines to make right and left bar aligned
       height = 21,
       enabled = show_if_has_second_pane,
     },
   }
 end
+-- I like when search basically take the entire screen. Makes it much easier to see previews.
+-- though I don't use this right now --- need to clean up code later
+local full_layout = {
+  layout = {
+    box = "vertical", -- stack children top→bottom
+    border = "rounded",
+    height = 0.99,
+    width = 0.99,
+    {
+      win = "input",
+      height = 1,
+      border = "bottom",
+    },
+    {
+      win = "list",
+      height = 0.33, -- exactly two rows tall
+      border = "bottom", -- optional separator
+    },
+    {
+      win = "preview",
+      -- no height ⇒ whatever is left
+    },
+  },
+}
 return {
   {
     "folke/snacks.nvim",
@@ -378,7 +427,11 @@ return {
       dashboard = {
         -- this is separated into a function so that the dashboard update can redraw it on .update()
         sections = create_sections,
+        layout = { anchor = "center" },
       },
+      -- picker = {
+      --   layout = full_layout,
+      -- },
     },
   },
 }

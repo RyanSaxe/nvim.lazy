@@ -29,11 +29,11 @@ detect_pm() {
 }
 # NOTE: eventually there will be deps only on brew that are how I like things locally but overkill for a server
 BREW_DEPS=(
-  neovim ripgrep fzf fd git lazygit node tmux gh python3 ipython
+  neovim ripgrep fzf fd git lazygit node tmux gh python3 ipython jq
   openjdk@17 wget git-delta zsh bat ghostscript imagemagick tectonic
 )
 APT_DEPS=(
-  neovim ripgrep fzf fd-find git build-essential nodejs tmux gh
+  neovim ripgrep fzf fd-find git build-essential nodejs tmux gh jq
   python3 ipython3 openjdk-17-jdk wget git-delta curl zsh bat
   ghostscript imagemagick
 )

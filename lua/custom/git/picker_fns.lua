@@ -55,6 +55,7 @@ function M.fetch_prs()
         files = files,
         body = obj.body or "",
         file = "~/.config/nvim/init.lua",
+        text = obj.body or "",  -- will be set in formatter
       }
     end
   end
@@ -233,7 +234,7 @@ function M.fetch_issues()
       state  = obj.state,
       labels = labels,
       body   = obj.body or "",
-      text   = nil,  -- will be set in formatter
+      text   = obj.body or "",  -- will be set in formatter
     }
     ::continue::
   end
@@ -270,7 +271,6 @@ function M.format_issue_row(item, picker)
   return ret
 end
 
--- TODO: figure out how to have this preview window have text wrap
 --- Preview the selected issue in Markdown
 ---@param ctx snacks.picker.preview.ctx
 function M.preview_issue(ctx)
@@ -302,15 +302,6 @@ function M.preview_issue(ctx)
   -- Render
   ctx.preview:set_lines(lines)
   ctx.preview:highlight({ ft = "markdown" })
-  -- NOTE: disabled since the below did not work ... says winid is not a valid window
-  -- since the preview is markdown, enable text wrapping
-  -- vim.schedule(function()
-  -- local winid = ctx.preview.win.id
-  -- local opts = { scope = "local", win = winid }
-  -- vim.api.nvim_set_option_value("wrap",       true, opts)
-  -- vim.api.nvim_set_option_value("linebreak",  true, opts)
-  -- vim.api.nvim_set_option_value("breakindent",true, opts)
-  -- end)
 end
 
 -- below is a slight modification of snacks picker for git diffs to let us pass reference commits
@@ -403,4 +394,91 @@ M.custom_diff = function(opts, ctx)
     flush_hunk()
   end
 end
+
+
+local align = function(txt, width, opts)
+  return require("snacks.picker.util").align(txt, width, opts)
+end
+
+-- Very light-weight parsing for the common “git@” and “https://” remotes
+local function current_repo()
+  local remote = (vim.fn.systemlist({ "git", "remote", "get-url", "origin" })[1] or ""):gsub("%.git$", "")
+  local owner, repo = remote:match("github%.com[:/](.-)/(.-)$")
+  return owner or "", repo or ""
+end
+
+local function iso_to_relative(iso)
+  local ok, t = pcall(function()
+    return vim.fn.strptime("%Y-%m-%dT%H:%M:%SZ", iso)
+  end)
+  if not ok or not t then return "?" end
+  local delta = os.time() - t
+  if delta < 60   then return delta .. " s ago"
+  elseif delta < 3600 then return math.floor(delta/60) .. " m ago"
+  elseif delta < 86400 then return math.floor(delta/3600) .. " h ago"
+  else return math.floor(delta/86400) .. " d ago" end
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Fetch
+-- ─────────────────────────────────────────────────────────────
+function M.fetch_notifications()
+  local owner, repo = current_repo()
+  if owner == "" or repo == "" then return {} end
+
+  local endpoint = string.format("/repos/%s/%s/notifications", owner, repo)
+  local cmd = {
+    "gh",
+    "api",
+    string.format("%s?participating=true&per_page=100&all=true", endpoint),
+    "--jq",
+    ".[] | @json",
+  }
+
+  local json_lines = vim.fn.systemlist(cmd)
+  local notes = {}
+
+  for _, line in ipairs(json_lines) do
+    local ok, obj = pcall(vim.json.decode, line)
+    if ok then
+      local subj = obj.subject or {}
+      notes[#notes + 1] = {
+        id         = obj.id,
+        unread     = obj.unread,
+        reason     = obj.reason,             -- e.g. "mention", "author", …
+        updated_at = obj.updated_at,
+        repo       = owner .. "/" .. repo,
+        title      = subj.title or "",
+        type       = subj.type or "",        -- "PullRequest", "Issue", …
+        api_url    = subj.url    or "",
+        html_url   = subj.latest_comment_url -- fallback, fixed in preview
+                    and subj.latest_comment_url:gsub("api%.github%.com/repos/", "github.com/"):gsub("/pulls/", "/pull/")
+                    or "",
+      text   = subj.title or "",  -- will be set in formatter
+      }
+
+    end
+  end
+    return notes
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Row formatter
+-- ─────────────────────────────────────────────────────────────
+---@param item   table
+---@param picker table
+function M.format_notification_row(item, picker)
+  local ret = {}
+  ret[#ret+1] = { align(item.type or "", 12), item.unread and "SnacksPickerIdx" or "SnacksIndent" }
+  ret[#ret+1] = { align(item.reason or "?", 12), item.unread and "SnacksIndent2" or "SnacksIndent" }
+  ret[#ret+1] = { " " .. iso_to_relative(item.updated_at), item.unread and "SnacksIndent1" or "SnacksIndent" }
+  ret[#ret+1] = { " " .. (item.title ~= "" and item.title or "<no title>"), item.unread and "SnacksIndent4" or "SnacksIndent" }
+ -- Make fuzzy searchable
+  item.text = table.concat(vim.tbl_map(function(seg) return seg[1] end, ret), "")
+
+  return ret
+end
+
+
+
 return M

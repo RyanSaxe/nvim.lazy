@@ -46,6 +46,45 @@ M.issue_picker = function()
   })
 end
 
+M.notification_picker = function()
+  Snacks.picker({
+    finder = fns.fetch_notifications,
+    format = fns.format_notification_row,
+    layout = {
+      layout = {
+        box = "vertical", -- stack children top→bottom
+        border = "rounded",
+        height = 0.8,
+        width = 0.8,
+        {
+          win = "input",
+          height = 1,
+          border = "bottom",
+        },
+        {
+          win = "list",
+        },
+      },
+    },
+    confirm = function(picker, item)
+      picker:close()
+      local url = vim.fn.system({
+        "gh",
+        "api",
+        item.api_url,
+        "--jq",
+        ".html_url",
+      })
+      url = vim.trim(url) -- remove trailing newline
+      if url == "" then
+        vim.notify("Failed to fetch URL for notification: " .. item.title, vim.log.levels.ERROR)
+        return
+      end
+      vim.ui.open(url)
+    end,
+  })
+end
+
 -- TODO: <S-CR> should open in browser
 M.pr_picker = function()
   Snacks.picker({
